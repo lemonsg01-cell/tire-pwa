@@ -13,7 +13,6 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            /* 💡 全域防止手機長按震動或選取網頁反白 */
             -webkit-user-select: none;
             user-select: none;
         }
@@ -40,7 +39,7 @@
             overflow: hidden;
             border-radius: 8px;
             width: 350px;
-            height: 450px;
+            height: 400px; /* 稍微縮小畫布高度，留空間給下方表格 */
         }
         canvas {
             display: block;
@@ -73,13 +72,11 @@
             white-space: nowrap;
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
             z-index: 10;
-
-            /* 💡 核心修正：徹底停用此標籤的長按、文字選取與放大鏡彈出功能 */
-            -webkit-user-select: none;  /* Safari */
-            -moz-user-select: none;     /* Firefox */
-            -ms-user-select: none;      /* IE */
-            user-select: none;          /* 標準 */
-            -webkit-touch-callout: none; /* 停用 iOS 長按跳出選單 */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
         .bg-blue { background-color: #1976D2; border: 2px solid #fff; }
         .bg-red { background-color: #D32F2F; border: 2px solid #fff; }
@@ -88,8 +85,8 @@
             width: 90%;
             max-width: 350px;
             background: white;
-            padding: 15px;
-            margin-top: 10px;
+            padding: 12px 15px;
+            margin-top: 5px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             display: flex;
@@ -100,30 +97,76 @@
         .result-title { font-size: 1.1rem; font-weight: bold; }
         .result-value { font-size: 1.8rem; font-weight: bold; color: #E53935; }
 
-        /* 📸 按鈕控制區 */
-        .btn-container { margin: 20px 0; }
-        .upload-btn {
-            background-color: #37474f;
+        /* 📸 按鈕與控制區 */
+        .btn-container { 
+            margin: 10px 0; 
+            display: flex;
+            gap: 10px; /* 讓兩個按鈕併排有間距 */
+            width: 90%;
+            max-width: 350px;
+        }
+        .action-btn {
+            flex: 1;
             color: white;
-            padding: 12px 40px;
-            font-size: 1rem;
+            padding: 12px 0;
+            font-size: 0.95rem;
             border-radius: 25px;
             cursor: pointer;
-            display: inline-block;
+            text-align: center;
             font-weight: bold;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            border: none;
         }
-        /* 💡 核心修正：拿掉 capture="camera"，改回標準影像輸入，手機會自動彈出「相機/相簿」二合一選單 */
+        .btn-photo { background-color: #37474f; }
+        .btn-record { background-color: #2e7d32; } /* 綠色記錄按鈕 */
         #file-input { display: none; }
+
+        /* 📋 歷史紀錄表格樣式 */
+        .history-panel {
+            width: 90%;
+            max-width: 350px;
+            background: white;
+            margin-top: 5px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+        .history-header {
+            background-color: #455a64;
+            color: white;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            text-align: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        th, td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        th { background-color: #fcfcfc; color: #666; }
+        tr:last-child td { border-bottom: none; }
+        .no-data {
+            color: #bbb;
+            padding: 15px 0;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
 
     <header>輪胎手動對齊檢測 (網頁版)</header>
-    <div class="instruction">💡 操作說明：拖曳下方的「大圓鈕」，即可控制上方半透明對齊線。</div>
+    <div class="instruction">💡 操作說明：拖曳「大圓鈕」對齊，確認後點擊「記錄數據」。</div>
 
     <div id="canvas-container">
-        <canvas id="tireCanvas" width="350" height="450"></canvas>
+        <canvas id="tireCanvas" width="350" height="400"></canvas>
         
         <div id="lineA" class="guide-line line-blue" style="left: 40px;"></div>
         <div id="lineB" class="guide-line line-blue" style="left: 310px;"></div>
@@ -133,7 +176,7 @@
         <div id="lineA-txt" class="line-label bg-blue" style="left: 40px; bottom: 75px;">胎左</div>
         <div id="lineB-txt" class="line-label bg-blue" style="left: 310px; bottom: 75px;">胎右</div>
         <div id="lineC-txt" class="line-label bg-red" style="left: 110px; bottom: 20px;">磨左</div>
-        <div id="lineD-txt" class="line-label bg-red" style="left: 240px; bottom: 20px;">磨right</div>
+        <div id="lineD-txt" class="line-label bg-red" style="left: 240px; bottom: 20px;">磨右</div>
     </div>
 
     <div class="result-panel">
@@ -142,8 +185,27 @@
     </div>
 
     <div class="btn-container">
-        <label for="file-input" class="upload-btn">📸 選擇相片或拍照</label>
+        <label for="file-input" class="action-btn btn-photo">📸 拍照/選照片</label>
         <input type="file" id="file-input" accept="image/*">
+        <button class="action-btn btn-record" onclick="addRecord()">📥 記錄數據</button>
+    </div>
+
+    <div class="history-panel">
+        <div class="history-header">📋 最近 4 筆量測歷史紀錄</div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 20%;">編號</th>
+                    <th style="width: 45%;">量測時間</th>
+                    <th style="width: 35%;">無胎紋占比</th>
+                </tr>
+            </thead>
+            <tbody id="history-body">
+                <tr>
+                    <td colspan="3" class="no-data">暫無紀錄，請點擊上方按鈕存入</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 
     <script>
@@ -151,6 +213,7 @@
         const ctx = canvas.getContext('2d');
         const fileInput = document.getElementById('file-input');
         const resultValue = document.getElementById('resultValue');
+        const historyBody = document.getElementById('history-body');
 
         let lines = {
             lineA: 40,
@@ -161,6 +224,8 @@
 
         const containerWidth = 350;
         let img = new Image();
+        let currentRatio = 0.0; // 全域儲存當前算出的比例
+        let records = []; // 儲存紀錄的陣列
 
         ctx.fillStyle = "#e0e0e0";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -190,6 +255,7 @@
             let noTreadWidth = Math.abs(lines.lineD - lines.lineC);
             
             if (totalWidth === 0) {
+                currentRatio = 0.0;
                 resultValue.innerText = "0.0 %";
                 return;
             }
@@ -197,7 +263,54 @@
             let ratio = (noTreadWidth / totalWidth) * 100;
             if (ratio > 100) ratio = 100;
             
-            resultValue.innerText = ratio.toFixed(1) + " %";
+            currentRatio = parseFloat(ratio.toFixed(1));
+            resultValue.innerText = currentRatio + " %";
+        }
+
+        // 📥 核心新增：記錄按鈕的處理邏輯
+        function addRecord() {
+            // 取得目前時間（時:分:秒）
+            const now = new Date();
+            const timeString = now.getHours().toString().padStart(2, '0') + ':' + 
+                               now.getMinutes().toString().padStart(2, '0') + ':' + 
+                               now.getSeconds().toString().padStart(2, '0');
+
+            // 建立新資料物件
+            const newRecord = {
+                time: timeString,
+                value: currentRatio + " %"
+            };
+
+            // 將新資料塞入陣列的最前面（最新顯示在最上層）
+            records.unshift(newRecord);
+
+            // 如果紀錄超過 4 筆，砍掉最後面（最舊）的那一筆
+            if (records.length > 4) {
+                records.pop();
+            }
+
+            // 重新繪製前端表格
+            updateHistoryTable();
+        }
+
+        // 🔄 重新渲染歷史紀錄表格
+        function updateHistoryTable() {
+            if (records.length === 0) {
+                historyBody.innerHTML = `<tr><td colspan="3" class="no-data">暫無紀錄，請點擊上方按鈕存入</td></tr>`;
+                return;
+            }
+
+            let html = "";
+            for (let i = 0; i < records.length; i++) {
+                html += `
+                    <tr>
+                        <td><b>#${i + 1}</b></td>
+                        <td>${records[i].time}</td>
+                        <td style="color: #e53935; font-weight: bold;">${records[i].value}</td>
+                    </tr>
+                `;
+            }
+            historyBody.innerHTML = html;
         }
 
         function setupDraggable(lineId, textId) {
@@ -205,7 +318,6 @@
             const textEl = document.getElementById(textId);
 
             textEl.addEventListener('pointerdown', function(e) {
-                // 💡 阻止預設行為，防止瀏覽器在長按時啟動滾動或放大鏡
                 e.preventDefault(); 
                 textEl.setPointerCapture(e.pointerId);
                 
