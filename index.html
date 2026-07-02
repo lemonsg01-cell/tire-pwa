@@ -39,10 +39,34 @@
             overflow: hidden;
             border-radius: 8px;
             width: 350px;
-            height: 400px; /* 稍微縮小畫布高度，留空間給下方表格 */
+            height: 400px;
         }
         canvas {
             display: block;
+        }
+        
+        /* 📸 【核心新增】相機快門動畫黑幕層 */
+        #shutter-effect {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000000;
+            opacity: 0;
+            pointer-events: none; /* 確保黑幕不阻擋任何觸控事件 */
+            z-index: 99; /* 永遠覆蓋在最上層 */
+        }
+
+        /* 💡 快門動畫效果：0.2秒內瞬間變黑再恢復透明 */
+        .shutter-flash {
+            animation: flashAnimation 0.22s ease-in-out;
+        }
+
+        @keyframes flashAnimation {
+            0% { opacity: 0; }
+            40% { opacity: 0.95; } /* 瞬間全黑閉合 */
+            100% { opacity: 0; }  /* 快速重開 */
         }
         
         /* 對齊線：50% 半透明 */
@@ -97,11 +121,11 @@
         .result-title { font-size: 1.1rem; font-weight: bold; }
         .result-value { font-size: 1.8rem; font-weight: bold; color: #E53935; }
 
-        /* 📸 按鈕與控制區 */
+        /* 功能按鈕區 */
         .btn-container { 
             margin: 10px 0; 
             display: flex;
-            gap: 10px; /* 讓兩個按鈕併排有間距 */
+            gap: 10px;
             width: 90%;
             max-width: 350px;
         }
@@ -118,10 +142,10 @@
             border: none;
         }
         .btn-photo { background-color: #37474f; }
-        .btn-record { background-color: #2e7d32; } /* 綠色記錄按鈕 */
+        .btn-record { background-color: #2e7d32; } 
         #file-input { display: none; }
 
-        /* 📋 歷史紀錄表格樣式 */
+        /* 歷史紀錄表格樣式 */
         .history-panel {
             width: 90%;
             max-width: 350px;
@@ -163,11 +187,13 @@
 <body>
 
     <header>輪胎手動對齊檢測 (網頁版)</header>
-    <div class="instruction">💡 操作說明：拖曳「大圓鈕」對齊，確認後點擊「記錄數據」。</div>
+    <div class="instruction">💡 操作說明：調整妥當後，點擊「記錄數據」會觸發快門並保存存檔。</div>
 
     <div id="canvas-container">
         <canvas id="tireCanvas" width="350" height="400"></canvas>
         
+        <div id="shutter-effect"></div>
+
         <div id="lineA" class="guide-line line-blue" style="left: 40px;"></div>
         <div id="lineB" class="guide-line line-blue" style="left: 310px;"></div>
         <div id="lineC" class="guide-line line-red" style="left: 110px;"></div>
@@ -214,6 +240,7 @@
         const fileInput = document.getElementById('file-input');
         const resultValue = document.getElementById('resultValue');
         const historyBody = document.getElementById('history-body');
+        const shutterEffect = document.getElementById('shutter-effect'); // 取得快門元素
 
         let lines = {
             lineA: 40,
@@ -224,8 +251,8 @@
 
         const containerWidth = 350;
         let img = new Image();
-        let currentRatio = 0.0; // 全域儲存當前算出的比例
-        let records = []; // 儲存紀錄的陣列
+        let currentRatio = 0.0;
+        let records = [];
 
         ctx.fillStyle = "#e0e0e0";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -267,33 +294,33 @@
             resultValue.innerText = currentRatio + " %";
         }
 
-        // 📥 核心新增：記錄按鈕的處理邏輯
+        // 📥 記錄按鈕
         function addRecord() {
-            // 取得目前時間（時:分:秒）
+            // 🎬 【核心新增】觸發快門動畫效果
+            shutterEffect.classList.remove('shutter-flash'); // 先移除舊動畫
+            void shutterEffect.offsetWidth;                 // 觸發瀏覽器重繪 (Reflow 密技)
+            shutterEffect.classList.add('shutter-flash');    // 重新附加動畫
+
+            // 以下為原本的資料存檔邏輯
             const now = new Date();
             const timeString = now.getHours().toString().padStart(2, '0') + ':' + 
                                now.getMinutes().toString().padStart(2, '0') + ':' + 
                                now.getSeconds().toString().padStart(2, '0');
 
-            // 建立新資料物件
             const newRecord = {
                 time: timeString,
                 value: currentRatio + " %"
             };
 
-            // 將新資料塞入陣列的最前面（最新顯示在最上層）
             records.unshift(newRecord);
-
-            // 如果紀錄超過 4 筆，砍掉最後面（最舊）的那一筆
             if (records.length > 4) {
                 records.pop();
             }
 
-            // 重新繪製前端表格
-            updateHistoryTable();
+            // 稍微延遲 100 毫秒再更新下方表格，讓視覺動效跟資料存檔節奏更和諧
+            setTimeout(updateHistoryTable, 100);
         }
 
-        // 🔄 重新渲染歷史紀錄表格
         function updateHistoryTable() {
             if (records.length === 0) {
                 historyBody.innerHTML = `<tr><td colspan="3" class="no-data">暫無紀錄，請點擊上方按鈕存入</td></tr>`;
