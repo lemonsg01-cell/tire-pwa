@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>輪胎手動對齊檢測網頁版</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        header {
+            width: 100%;
+            background-color: #37474f;
+            color: white;
+            text-align: center;
+            padding: 15px 0;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .instruction {
+            padding: 10px 20px;
+            font-size: 0.9rem;
+            color: #555;
+            text-align: center;
+        }
+        /* 畫布容器，設定為相對定位以利線條與標籤疊加 */
+        #canvas-container {
+            position: relative;
+            margin: 10px auto;
+            border: 2px dashed #ccc;
+            background-color: #e0e0e0;
+            overflow: hidden;
+            border-radius: 8px;
+            width: 350px;
+            height: 450px;
+        }
+        canvas {
+            display: block;
+        }
+        /* 輔助線樣式 */
+        .guide-line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            cursor: ew-resize;
+            touch-action: none; /* 標記此處禁用瀏覽器預設手勢，避免拖曳時網頁被拉動 */
+        }
+        .line-blue { background-color: #2196F3; box-shadow: 0 0 4px #2196F3; }
+        .line-red { background-color: #F44336; box-shadow: 0 0 4px #F44336; }
+        
+        /* 線條上方的標籤 */
+        .line-label {
+            position: absolute;
+            top: 15px;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 10px;
+            padding: 2px 4px;
+            border-radius: 3px;
+            pointer-events: none; /* 防止標籤阻擋滑鼠拖曳事件 */
+            white-space: nowrap;
+        }
+        .bg-blue { background-color: #2196F3; }
+        .bg-red { background-color: #F44336; }
+
+        /* 結果顯示與控制區 */
+        .result-panel {
+            width: 90%;
+            max-width: 350px;
+            background: white;
+            padding: 15px;
+            margin-top: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-sizing: border-box;
+        }
+        .result-title { font-size: 1.1rem; font-weight: bold; }
+        .result-value { font-size: 1.8rem; font-weight: bold; color: #E53935; }
+
+        /* 拍照按鈕裝飾 */
+        .btn-container { margin: 20px 0; }
+        .upload-btn {
+            background-color: #37474f;
+            color: white;
+            padding: 12px 40px;
+            font-size: 1rem;
+            border-radius: 25px;
+            cursor: pointer;
+            display: inline-block;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+<link rel="manifest" href="manifest.json">
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js')
+        .then(reg => console.log('Service Worker 註冊成功！', reg))
+        .catch(err => console.log('Service Worker 註冊失敗：', err));
+    });
+  }
+</script>
+        #file-input { display: none; }
+    </style>
+</head>
+<body>
+
+    <header>輪胎手動對齊檢測 (網頁版)</header>
+    <div class="instruction">💡 操作說明：拖曳藍線對齊「輪胎兩側」，紅線對齊「中間無胎紋範圍」。</div>
+
+    <div id="canvas-container">
+        <canvas id="tireCanvas" width="350" height="450"></canvas>
+        
+        <div id="lineA" class="guide-line line-blue" style="left: 50px;"></div>
+        <div id="lineA-txt" class="line-label bg-blue" style="left: 50px;">胎左</div>
+
+        <div id="lineB" class="guide-line line-blue" style="left: 300px;"></div>
+        <div id="lineB-txt" class="line-label bg-blue" style="left: 300px;">胎右</div>
+
+        <div id="lineC" class="guide-line line-red" style="left: 120px;"></div>
+        <div id="lineC-txt" class="line-label bg-red" style="left: 120px;">磨左</div>
+
+        <div id="lineD" class="guide-line line-red" style="left: 230px;"></div>
+        <div id="lineD-txt" class="line-label bg-red" style="left: 230px;">磨右</div>
+    </div>
+
+    <div class="result-panel">
+        <div class="result-title">無胎紋比例：</div>
+        <div id="resultValue" class="result-value">0.0 %</div>
+    </div>
+
+    <div class="btn-container">
+        <label for="file-input" class="upload-btn">📸 拍攝或選擇照片</label>
+        <input type="file" id="file-input" accept="image/*" capture="camera">
+    </div>
+
+    <script>
+        const canvas = document.getElementById('tireCanvas');
+        const ctx = canvas.getContext('2d');
+        const fileInput = document.getElementById('file-input');
+        const resultValue = document.getElementById('resultValue');
+
+        // 記錄 4 條線的 X 座標
+        let lines = {
+            lineA: 50,
+            lineB: 300,
+            lineC: 120,
+            lineD: 230
+        };
+
+        const containerWidth = 350;
+        let img = new Image();
+
+        // 預設在畫布畫一個提示用的 icon 背景
+        ctx.fillStyle = "#e0e0e0";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = "16px sans-serif";
+        ctx.fillStyle = "#777777";
+        ctx.textAlign = "center";
+        ctx.fillText("請點下方按鈕拍照或上傳照片", canvas.width / 2, canvas.height / 2);
+
+        // 1. 處理相片上傳與繪製
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                img.onload = function() {
+                    // 清空畫布並滿版繪製相片
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    calculateRatio();
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        });
+
+        // 2. 計算比例邏輯
+        function calculateRatio() {
+            let totalWidth = Math.abs(lines.lineB - lines.lineA);
+            let noTreadWidth = Math.abs(lines.lineD - lines.lineC);
+            
+            if (totalWidth === 0) {
+                resultValue.innerText = "0.0 %";
+                return;
+            }
+            
+            let ratio = (noTreadWidth / totalWidth) * 100;
+            if (ratio > 100) ratio = 100;
+            
+            resultValue.innerText = ratio.toFixed(1) + " %";
+        }
+
+        // 3. 設定拖曳事件（支援滑鼠與手機觸控）
+        function setupDraggable(lineId, textId, minLimitKey, maxLimitKey, isMinLine) {
+            const lineEl = document.getElementById(lineId);
+            const textEl = document.getElementById(textId);
+
+            lineEl.addEventListener('pointerdown', function(e) {
+                lineEl.setPointerCapture(e.pointerId); // 鎖定觸控焦點
+                
+                function onPointerMove(ev) {
+                    // 獲取容器範圍內的相對 X 座標
+                    const rect = canvas.getBoundingClientRect();
+                    let newX = ev.clientX - rect.left;
+                    
+                    // 動態防錯範圍限制
+                    let minLimit = minLimitKey ? lines[minLimitKey] : 0;
+                    let maxLimit = maxLimitKey ? lines[maxLimitKey] : containerWidth;
+                    
+                    // 如果是內側紅線，要多增加限制不要彼此穿透
+                    if(lineId === 'lineA') maxLimit = lines.lineB - 10;
+                    if(lineId === 'lineB') minLimit = lines.lineA + 10;
+                    if(lineId === 'lineC') { minLimit = lines.lineA; maxLimit = lines.lineD - 10; }
+                    if(lineId === 'lineD') { minLimit = lines.lineC; maxLimit = lines.lineB; }
+
+                    // 限制邊界
+                    if (newX < minLimit) newX = minLimit;
+                    if (newX > maxLimit) newX = maxLimit;
+
+                    // 更新數據與 DOM 位置
+                    lines[lineId] = newX;
+                    lineEl.style.left = newX + 'px';
+                    textEl.style.left = newX + 'px';
+                    
+                    // 即時更新百分比
+                    calculateRatio();
+                }
+
+                function onPointerUp(ev) {
+                    lineEl.removeEventListener('pointermove', onPointerMove);
+                    lineEl.removeEventListener('pointerup', onPointerUp);
+                }
+
+                lineEl.addEventListener('pointermove', onPointerMove);
+                lineEl.addEventListener('pointerup', onPointerUp);
+            });
+        }
+
+        // 綁定四條線的拖曳邏輯與各自的左右防穿透限制
+        setupDraggable('lineA', 'lineA-txt', null, 'lineB');
+        setupDraggable('lineB', 'lineB-txt', 'lineA', null);
+        setupDraggable('lineC', 'lineC-txt', 'lineA', 'lineD');
+        setupDraggable('lineD', 'lineD-txt', 'lineC', 'lineB');
+
+        // 初始化第一次計算
+        calculateRatio();
+    </script>
+</body>
+</html>
